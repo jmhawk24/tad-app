@@ -15,6 +15,7 @@ provider "aws" {
 
 resource "aws_vpc" "tad_app_vpc" {
   cidr_block = "10.0.0.0/16"
+  enable_dns_hostnames = true
 
   tags = {
     Name = "vpc for tadapp ec2 and rds"
@@ -23,14 +24,20 @@ resource "aws_vpc" "tad_app_vpc" {
 
 resource "aws_subnet" "public_subnet" {
   vpc_id = aws_vpc.tad_app_vpc.id
-  cidr_block = "10.0.1.0/24"
-  availability_zone = "1a"
+  cidr_block = "10.0.1.0/25"
+  availability_zone = "us-west-2a"
+}
+
+resource "aws_subnet" "public_subnet_2b" {
+  vpc_id = aws_vpc.tad_app_vpc.id
+  cidr_block = "10.0.2.0/25"
+  availability_zone = "us-west-2b"
 }
 
 resource "aws_subnet" "private_subnet" {
   vpc_id = aws_vpc.tad_app_vpc.id
-  cidr_block = "10.0.2.0/24"
-  availability_zone = "1a"
+  cidr_block = "10.0.3.0/25"
+  availability_zone = "us-west-2a"
 }
 
 resource "aws_internet_gateway" "ig" {
@@ -133,7 +140,9 @@ resource "aws_instance" "app_server" {
   ami = data.aws_ami.ubuntu.id
   instance_type = "t2.micro"
   key_name = aws_key_pair.generated_key.key_name
-  security_groups = [aws_security_group.jacob_basic.name]
+  vpc_security_group_ids = [aws_security_group.jacob_basic.id]
+  associate_public_ip_address = true
+  subnet_id = aws_subnet.public_subnet.id
 
   user_data = <<-EOF
   #!/bin/bash -ex
@@ -147,4 +156,22 @@ resource "aws_instance" "app_server" {
   tags = {
     Name = "server with Kanye quotes set up to nginx homepage"
   }
+}
+
+resource "aws_db_subnet_group" "db_sub" {
+  name = "tadapp_db_subnet"
+  subnet_ids = [aws_subnet.public_subnet.id, aws_subnet.public_subnet_2b.id]
+}
+
+resource "aws_db_instance" "tadapp_db" {
+  allocated_storage = 5
+  db_subnet_group_name = aws_db_subnet_group.db_sub.name
+  vpc_security_group_ids = [aws_security_group.jacob_basic.id]
+  instance_class = "db.t2.micro"
+  publicly_accessible = true
+  db_name = "tadapp"
+  engine = "postgres"
+  engine_version = "12"
+  username = "tadapp"
+  password = "rootuser" // generate this in secrets manager then set it here
 }
